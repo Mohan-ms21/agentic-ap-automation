@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+pypdf
+rapidfuzz
+python-dotenv
+# Optional AI orchestration
+crewai
+litellm
+# Optional vector DB
+qdrant-client

@@ -1,0 +1,4 @@
+vendor_id,vendor_name,trusted,default_gl,payment_terms
+V100,Acme Supplies Inc.,1,6100,NET30
+V200,Globex Marketing LLC,0,6200,NET45
+V300,Initech Hardware,1,6150,NET15

@@ -1,0 +1,4 @@
+po_number,vendor_id,amount,currency,status
+PO-91001,V100,2450.00,USD,OPEN
+PO-91002,V200,8800.00,USD,OPEN
+PO-91003,V300,512.35,USD,OPEN
