@@ -155,45 +155,73 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def parse_invoice_text(text: str, vendors_df: pd.DataFrame) -> Dict[str, Any]:
-    # Simple regex-based parsing for MVP
+    # Safer regex matcher
     def find(pattern, flags=re.IGNORECASE):
         m = re.search(pattern, text, flags)
-        return (m.group(2) if m and m.lastindex else (m.group(1) if m else None))
+        if not m:
+            return None
+        # return the first non-empty capturing group
+        for i in range(1, (m.lastindex or 0) + 1):
+            if m.group(i):
+                return m.group(i).strip()
+        return None
 
-    invoice_number = find(r"(?:Invoice\s*(?:No\.?|Number)\s*[:\-]?\s*([A-Za-z0-9\/\-]+))")
-    po_number = find(r"(?:PO\s*(?:No\.?|Number)?\s*[:\-]?\s*([A-Za-z0-9\/\-]+))")
-    currency = find(r"(USD|CAD|EUR|GBP|INR|AUD|¥|€|\$)") or "USD"
-    total = find(r"(?:Invoice\s*Total|Total\s*Due|Amount\s*Due)\s*[:\-]?\s*\$?([0-9,]+\.?[0-9]{0,2})")
-    tax = find(r"(?:Tax|HST|GST|VAT)\s*[:\-]?\s*\$?([0-9,]+\.?[0-9]{0,2})")
-    date_raw = find(r"(?:Invoice\s*Date|Date)\s*[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}\-\d{2}\-\d{2})")
+    # Invoice number
+    invoice_number = find(r"(?i)(?:invoice\s*(?:no\.?|number|#)?)\s*[:\-]?\s*([A-Za-z0-9\/\-\_]+)")
 
-    # Heuristic vendor match: fuzzy search on known vendors
+    # PO number
+    po_number = find(r"(?i)(?:po\s*(?:no\.?|number|#)?|purchase\s*order)\s*[:\-]?\s*([A-Za-z0-9\/\-\_]+)")
+
+    # Date (handles ISO, US, EU, written formats)
+    invoice_date = find(
+        r"(?i)(?:invoice\s*date|date)\s*[:\-]?\s*("
+        r"(?:\d{4}[-/]\d{2}[-/]\d{2})|"                 # 2025-09-20
+        r"(?:\d{1,2}[-/]\d{1,2}[-/]\d{2,4})|"          # 09/20/2025
+        r"(?:[A-Za-z]{3,9}\s+\d{1,2},\s*\d{2,4})"      # Sep 20, 2025
+        r")"
+    )
+
+    # Subtotal
+    subtotal = find(r"(?i)(?:subtotal|sub\s*total|amount)\s*[:\-]?\s*\$?\s*([0-9,]+\.?[0-9]{0,2})")
+
+    # Tax
+    tax = find(r"(?i)(?:tax|gst|vat|sales\s*tax)\s*[:\-]?\s*\$?\s*([0-9,]+\.?[0-9]{0,2})")
+
+    # Total
+    total = find(r"(?i)(?:invoice\s*total|total\s*due|amount\s*due|\s*total)\s*[:\-]?\s*\$?\s*([0-9,]+\.?[0-9]{0,2})")
+
+    # Vendor guess by fuzzy match
     vendor_name_guess = None
     choices = vendors_df["vendor_name"].tolist()
     best = fuzz_process.extractOne(text[:5000], choices)
-    if best and best[1] > 60:  # score threshold
+    if best and best[1] > 60:
         vendor_name_guess = best[0]
 
-    try:
-        total_val = float(str(total).replace(",", "")) if total else None
-    except Exception:
-        total_val = None
-    try:
-        tax_val = float(str(tax).replace(",", "")) if tax else 0.0
-    except Exception:
-        tax_val = 0.0
+    # Convert to floats safely
+    def safe_float(val):
+        try:
+            return float(str(val).replace(",", "")) if val else None
+        except Exception:
+            return None
+
+    subtotal_val = safe_float(subtotal)
+    tax_val = safe_float(tax) or 0.0
+    total_val = safe_float(total)
+
+    # Fallback: if subtotal missing, compute from total - tax
+    if subtotal_val is None and total_val is not None:
+        subtotal_val = total_val - tax_val
 
     return {
         "invoice_number": invoice_number,
         "po_number": po_number,
-        "currency": currency if currency not in ["$", "€", "¥"] else {"$": "USD", "€": "EUR", "¥": "JPY"}.get(currency, "USD"),
-        "subtotal": (total_val - tax_val) if (total_val is not None) else None,
+        "invoice_date": invoice_date,
+        "currency": "USD",  # can improve later
+        "subtotal": subtotal_val,
         "tax": tax_val,
         "total": total_val,
-        "invoice_date": date_raw,
         "vendor_name": vendor_name_guess,
     }
-
 
 # -----------------------------
 # Core AP Validations
@@ -556,4 +584,5 @@ def render_policies_and_data():
 
 
 if __name__ == "__main__":
+
     main()
