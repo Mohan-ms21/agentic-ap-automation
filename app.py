@@ -13,27 +13,44 @@ from rapidfuzz import process as fuzz_process
 
 # Optional/modern AI libs (gracefully degrade if not configured)
 USE_LLM = False
-USE_CREW = False
+USE_CREW = os.getenv("USE_CREW", "false").lower() == "true"  # 👈 respect secret
+USE_QDRANT = False
+
+# CrewAI import
 try:
     from crewai import Agent, Task, Crew, Process
-    USE_CREW = True
-except Exception:
+    if USE_CREW:
+        print("✅ CrewAI imports successful & enabled")
+    else:
+        print("ℹ️ CrewAI installed but disabled via config")
+except Exception as e:
+    print(f"❌ CrewAI not installed: {e}")
     USE_CREW = False
 
+# LiteLLM import
 try:
     import litellm
     USE_LLM = bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY"))
 except Exception:
     USE_LLM = False
 
-# Optional vector DB (Qdrant); falls back to in-memory lookups
-USE_QDRANT = False
+# Qdrant import + client
+qdrant = None
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.http.models import Distance, VectorParams
-    USE_QDRANT = bool(os.getenv("QDRANT_URL"))
-except Exception:
+    if os.getenv("QDRANT_URL"):
+        qdrant = QdrantClient(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY")
+        )
+        USE_QDRANT = True
+        print("✅ Qdrant client initialized")
+    else:
+        print("ℹ️ Qdrant not configured (no URL in secrets)")
+except Exception as e:
     USE_QDRANT = False
+    print(f"❌ Qdrant import/init failed: {e}")
 
 APP_TITLE = "Agentic AP Automation — CrewAI MVP"
 DB_PATH = os.path.join("storage", "ap_demo.db")
@@ -586,3 +603,4 @@ def render_policies_and_data():
 if __name__ == "__main__":
 
     main()
+
